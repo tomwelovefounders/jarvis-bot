@@ -1,0 +1,16 @@
+# ⚠️ SUPER IMPORTANT: NE PUSH JAMAIS CE FICHIER SUR GITHUB
+# Ce fichier contient tes tokens secrets. Le .gitignore l'ignore automatiquement.
+# Si tu l'as push accidentellement, revoke tous tes tokens immédiatement!
+
+# Telegram Bot Token (from BotFather)
+TELEGRAM_TOKEN=8076062627:AAGbWRFbDadWR_hboHOanNt40xHiZHFwzzg
+
+# Notion API Token (from https://www.notion.so/my-integrations)
+NOTION_TOKEN=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
+
+# Notion Database ID (from your Jarvis Intake database URL)
+NOTION_DATABASE_ID=34f83ff1ba3a80eda94ec7c3a291f612
+
+# Claude API Key (from https://console.anthropic.com/account/keys)
+# ⚠️ Ne partage JAMAIS cette clé. Elle te coûte de l'argent si quelqu'un l'utilise!
+CLAUDE_API_KEY=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
