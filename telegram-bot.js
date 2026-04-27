@@ -13,7 +13,7 @@ const bot = new TelegramBot(token, { polling: true });
 const conversationState = {};
 
 // Initialize Claude Sonnet
-const CLAUDE_MODEL = 'claude-opus-4-20250805';
+const CLAUDE_MODEL = 'cclaude-3-5-sonnet-20241022';
 
 async function callClaudeAPI(messages) {
   try {
