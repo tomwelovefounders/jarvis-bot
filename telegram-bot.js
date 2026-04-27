@@ -9,25 +9,12 @@ const claudeKey = process.env.CLAUDE_API_KEY;
 
 const bot = new TelegramBot(token, { polling: true });
 
-// Store conversation state per user
 const conversationState = {};
+const CLAUDE_MODEL = 'claude-3-5-sonnet-20241022';
 
-// Initialize Claude Sonnet
-const CLAUDE_MODEL = 'cclaude-3-5-sonnet-20241022';
-
-async function callClaudeAPI(messages) {
+async function callClaudeAPI(userMessage) {
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': claudeKey,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: CLAUDE_MODEL,
-        max_tokens: 500,
-        system: `Tu es Jarvis, un assistant IA pour Tom qui travaille chez WeloveFounders (fonds VC belge pré-seed/seed, modèle operating partner).
+    const systemPrompt = `Tu es Jarvis, un assistant IA pour Tom qui travaille chez WeloveFounders (fonds VC belge pré-seed/seed).
 
 Ton rôle: Aider Tom à structurer ses notes quotidiennes brutes en informations bien organisées pour Notion.
 
@@ -39,13 +26,8 @@ Quand Tom écrit une note:
 IMPORTANT: 
 - Réponds EN FRANÇAIS
 - Sois direct et efficace (Tom est occupé)
-- Pour chaque type:
-  - Operation: demande la company et la deadline
-  - Metric: demande la valeur et la tendance
-  - Blocage: demande l'impact et la solution proposée
-  - Note: demande juste le contexte
 
-FORMAT DE RÉPONSE FINALE (quand tu as assez d'infos):
+Si tu as assez d'infos, réponds avec ce JSON format:
 \`\`\`json
 {
   "type": "Operation|Metric|Blocage|Note",
@@ -55,13 +37,31 @@ FORMAT DE RÉPONSE FINALE (quand tu as assez d'infos):
   "context": "description courte",
   "action": "action proposée ou insight"
 }
-\`\`\``,
-        messages: messages
+\`\`\``;
+
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': claudeKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: CLAUDE_MODEL,
+        max_tokens: 500,
+        system: systemPrompt,
+        messages: [
+          {
+            role: 'user',
+            content: userMessage
+          }
+        ]
       })
     });
 
     if (!response.ok) {
-      console.error('Claude API error:', await response.text());
+      const error = await response.text();
+      console.error('Claude API error:', error);
       return null;
     }
 
@@ -142,7 +142,7 @@ bot.onText(/\/start/, (msg) => {
     `À toi! 👉`,
     { parse_mode: 'Markdown' }
   );
-  conversationState[chatId] = { step: 'initial', messages: [] };
+  conversationState[chatId] = { step: 'initial', messages: [], questionCount: 0 };
 });
 
 bot.on('message', async (msg) => {
@@ -151,64 +151,57 @@ bot.on('message', async (msg) => {
   const chatId = msg.chat.id;
   const userMessage = msg.text;
 
-  // Initialize if needed
   if (!conversationState[chatId]) {
-    conversationState[chatId] = { step: 'initial', messages: [] };
+    conversationState[chatId] = { step: 'initial', messages: [], questionCount: 0 };
   }
 
   const state = conversationState[chatId];
 
   try {
-    // Add user message to history
-    state.messages.push({
-      role: 'user',
-      content: userMessage
-    });
-
     // Call Claude to get response
-    const claudeResponse = await callClaudeAPI(state.messages);
+    const claudeResponse = await callClaudeAPI(userMessage);
     
     if (!claudeResponse) {
       bot.sendMessage(chatId, '❌ Erreur API Claude. Réessaie stp.');
       return;
     }
 
-    // Add Claude response to history
-    state.messages.push({
-      role: 'assistant',
-      content: claudeResponse
-    });
-
     // Check if response contains JSON (task completed)
     const jsonMatch = claudeResponse.match(/```json\n([\s\S]*?)\n```/);
     
     if (jsonMatch) {
       // Parse and save to Notion
-      const taskData = JSON.parse(jsonMatch[1]);
-      const saved = await saveToNotion(taskData);
+      try {
+        const taskData = JSON.parse(jsonMatch[1]);
+        const saved = await saveToNotion(taskData);
 
-      if (saved) {
-        bot.sendMessage(chatId,
-          `✅ *Tâche structurée et sauvée dans Notion!*\n\n` +
-          `📌 *Type:* ${taskData.type}\n` +
-          `🏢 *Company:* ${taskData.company}\n` +
-          `⚡ *Priority:* ${taskData.priority}\n` +
-          `📝 *Context:* ${taskData.context}\n` +
-          `🎯 *Action:* ${taskData.action}\n\n` +
-          `Écris une autre note pour continuer! 📬`,
-          { parse_mode: 'Markdown' }
-        );
-        
-        // Reset conversation
-        state.messages = [];
-        state.step = 'initial';
-      } else {
-        bot.sendMessage(chatId, '⚠️ Erreur en sauvant dans Notion. Vérifie ta clé API.');
+        if (saved) {
+          bot.sendMessage(chatId,
+            `✅ *Tâche structurée et sauvée dans Notion!*\n\n` +
+            `📌 *Type:* ${taskData.type}\n` +
+            `🏢 *Company:* ${taskData.company}\n` +
+            `⚡ *Priority:* ${taskData.priority}\n` +
+            `📝 *Context:* ${taskData.context}\n` +
+            `🎯 *Action:* ${taskData.action}\n\n` +
+            `Écris une autre note pour continuer! 📬`,
+            { parse_mode: 'Markdown' }
+          );
+          
+          // Reset conversation
+          state.step = 'initial';
+          state.messages = [];
+          state.questionCount = 0;
+        } else {
+          bot.sendMessage(chatId, '⚠️ Erreur en sauvant dans Notion. Vérifie ta clé API.');
+        }
+      } catch (parseError) {
+        console.error('JSON parse error:', parseError);
+        bot.sendMessage(chatId, '❌ Erreur en traitant la réponse. Réessaie stp.');
       }
     } else {
       // Claude is asking clarifying questions
       bot.sendMessage(chatId, claudeResponse);
-      state.step = 'clarifying';
+      state.questionCount++;
     }
 
   } catch (error) {
